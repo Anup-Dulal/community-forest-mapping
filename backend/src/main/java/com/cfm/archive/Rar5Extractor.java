@@ -8,7 +8,6 @@ import org.springframework.stereotype.Component;
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -50,7 +49,7 @@ public class Rar5Extractor {
             log.info("Successfully extracted {} files from RAR5 archive", result.successCount);
             
             // List extracted files recursively (files may be in subdirectories)
-            List<Path> extractedFiles = new ArrayList<>();
+            List<Path> extractedFiles;
             try (Stream<Path> files = Files.walk(targetDirectory)) {
                 extractedFiles = files
                         .filter(Files::isRegularFile)
