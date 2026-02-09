@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cfm-backend
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:sqlite:/app/cfm.db
+      GIS_SERVICE_URL: http://gis-service:8001
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./dem_cache:/app/dem_cache
+      - ./exports:/app/exports
+      - ./cfm.db:/app/cfm.db
+    networks:
+      - cfm-network
+
+  gis-service:
+    build:
+      context: ./gis-service
+      dockerfile: Dockerfile
+    container_name: cfm-gis-service
+    environment:
+      OPENTOPOGRAPHY_API_KEY: ${OPENTOPOGRAPHY_API_KEY:-}
+      NASA_API_KEY: ${NASA_API_KEY:-}
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./dem_cache:/app/dem_cache
+      - ./exports:/app/exports
+    networks:
+      - cfm-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: cfm-frontend
+    environment:
+      REACT_APP_API_URL: http://localhost:8080
+      REACT_APP_GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - cfm-network
+
+networks:
+  cfm-network:
+    driver: bridge

@@ -1,0 +1,146 @@
+.progress-indicator {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 350px;
+  padding: 16px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  background-color: #ffffff;
+  border-left: 4px solid #2196F3;
+  z-index: 1000;
+  animation: slideIn 0.3s ease-out;
+}
+
+.progress-indicator.progress-in_progress {
+  border-left-color: #2196F3;
+  background-color: #f5f5f5;
+}
+
+.progress-indicator.progress-completed {
+  border-left-color: #4CAF50;
+  background-color: #f1f8f4;
+}
+
+.progress-indicator.progress-error {
+  border-left-color: #f44336;
+  background-color: #fef5f5;
+}
+
+.progress-indicator.progress-pending {
+  border-left-color: #FF9800;
+  background-color: #fff8f0;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(400px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.progress-operation {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+}
+
+.progress-percentage {
+  font-size: 12px;
+  font-weight: 600;
+  color: #666;
+  min-width: 40px;
+  text-align: right;
+}
+
+.progress-bar-container {
+  width: 100%;
+  height: 6px;
+  background-color: #e0e0e0;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #2196F3, #1976D2);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.progress-indicator.progress-completed .progress-bar-fill {
+  background: linear-gradient(90deg, #4CAF50, #388E3C);
+}
+
+.progress-indicator.progress-error .progress-bar-fill {
+  background: linear-gradient(90deg, #f44336, #d32f2f);
+}
+
+.progress-message {
+  margin: 8px 0 0 0;
+  font-size: 12px;
+  color: #666;
+  line-height: 1.4;
+}
+
+.progress-spinner {
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #e0e0e0;
+  border-top-color: #2196F3;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.progress-icon {
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 20px;
+  font-weight: bold;
+}
+
+.checkmark {
+  color: #4CAF50;
+}
+
+.error-mark {
+  color: #f44336;
+}
+
+/* Responsive design */
+@media (max-width: 600px) {
+  .progress-indicator {
+    width: calc(100% - 40px);
+    bottom: 10px;
+    right: 10px;
+    left: 10px;
+  }
+}

@@ -1,0 +1,56 @@
+spring:
+  application:
+    name: community-forest-mapping
+  
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:sqlite:./cfm.db}
+    username: ${SPRING_DATASOURCE_USERNAME:}
+    password: ${SPRING_DATASOURCE_PASSWORD:}
+    driver-class-name: org.sqlite.JDBC
+  
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        dialect: org.hibernate.community.dialect.SQLiteDialect
+        format_sql: true
+        jdbc:
+          batch_size: 20
+          fetch_size: 50
+    show-sql: false
+  
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
+
+server:
+  port: 8080
+  servlet:
+    context-path: /api
+
+logging:
+  level:
+    root: INFO
+    com.cfm: DEBUG
+    org.springframework.web: INFO
+    org.hibernate.SQL: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+
+app:
+  name: Community Forest Mapping
+  version: 1.0.0
+  upload-dir: ${UPLOAD_DIR:./uploads}
+  dem-cache-dir: ${DEM_CACHE_DIR:./dem_cache}
+  export-dir: ${EXPORT_DIR:./exports}
+  gis-service-url: ${GIS_SERVICE_URL:http://localhost:8001}
+  gis-service-timeout: ${GIS_SERVICE_TIMEOUT:300}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true

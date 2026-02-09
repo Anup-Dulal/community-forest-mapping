@@ -1,0 +1,133 @@
+/**
+ * Styles for ToolsPanel component.
+ */
+
+.tools-panel {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.tool-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tool-button {
+  padding: 12px 16px;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+
+.tool-button.primary {
+  background-color: #2196f3;
+  color: white;
+}
+
+.tool-button.primary:hover:not(:disabled) {
+  background-color: #1976d2;
+  box-shadow: 0 2px 8px rgba(33, 150, 243, 0.3);
+}
+
+.tool-button {
+  background-color: #f5f5f5;
+  color: #333;
+  border: 1px solid #ddd;
+}
+
+.tool-button:hover:not(:disabled) {
+  background-color: #eeeeee;
+  border-color: #bbb;
+}
+
+.tool-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.tool-description {
+  font-size: 12px;
+  color: #999;
+  margin: 0;
+  padding: 0 4px;
+}
+
+.tool-content {
+  padding: 12px;
+  background-color: #f9f9f9;
+  border: 1px solid #eee;
+  border-radius: 4px;
+}
+
+.tool-info {
+  padding: 12px;
+  background-color: #f9f9f9;
+  border: 1px solid #eee;
+  border-radius: 4px;
+}
+
+.tool-info h3 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  color: #333;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.status-badge.idle {
+  background-color: #e8f5e9;
+  color: #2e7d32;
+}
+
+.status-badge.downloading,
+.status-badge.clipping,
+.status-badge.processing {
+  background-color: #fff3e0;
+  color: #e65100;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.status-badge.complete {
+  background-color: #e8f5e9;
+  color: #2e7d32;
+}
+
+.status-badge.error {
+  background-color: #ffebee;
+  color: #c62828;
+}
+
+.status-message {
+  font-size: 12px;
+  color: #666;
+  margin: 4px 0;
+}
+
+.status-detail {
+  font-size: 11px;
+  color: #999;
+  margin: 4px 0 0 0;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
