@@ -24,6 +24,7 @@ interface AppStore {
 
   // Analysis data
   currentAnalysisId: string | null;
+  currentShapefileId: string | null;
   analysisResult: AnalysisResult | null;
 
   // Actions
@@ -34,6 +35,7 @@ interface AppStore {
   setMapZoom: (zoom: number) => void;
   setLayerVisibility: (layer: keyof LayerVisibility, visible: boolean) => void;
   setCurrentAnalysisId: (id: string | null) => void;
+  setCurrentShapefileId: (id: string | null) => void;
   setAnalysisResult: (result: AnalysisResult | null) => void;
   resetState: () => void;
 }
@@ -57,6 +59,7 @@ export const useAppStore = create<AppStore>((set) => ({
   analysisStatus: { status: 'idle' },
   mapState: initialMapState,
   currentAnalysisId: null,
+  currentShapefileId: null,
   analysisResult: null,
 
   setUploadStatus: (status: UploadStatus) =>
@@ -92,6 +95,9 @@ export const useAppStore = create<AppStore>((set) => ({
   setCurrentAnalysisId: (id: string | null) =>
     set({ currentAnalysisId: id }),
 
+  setCurrentShapefileId: (id: string | null) =>
+    set({ currentShapefileId: id }),
+
   setAnalysisResult: (result: AnalysisResult | null) =>
     set({ analysisResult: result }),
 
@@ -102,6 +108,7 @@ export const useAppStore = create<AppStore>((set) => ({
       analysisStatus: { status: 'idle' },
       mapState: initialMapState,
       currentAnalysisId: null,
+      currentShapefileId: null,
       analysisResult: null,
     }),
 }));

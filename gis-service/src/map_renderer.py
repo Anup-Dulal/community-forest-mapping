@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
 import numpy as np
-from pathlib import Path
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ class MapRenderer:
             export_dir: Directory to store generated map files
         """
         self.export_dir = export_dir
-        Path(export_dir).mkdir(parents=True, exist_ok=True)
+        os.makedirs(export_dir, exist_ok=True)
 
     def render_slope_map(
         self,
@@ -58,7 +58,7 @@ class MapRenderer:
         Render slope classification map with legend and annotations.
         
         Args:
-            boundary_path: Path to boundary GeoJSON
+            boundary_path: Path to boundary GeoJSON or WKT geometry string
             slope_raster_path: Path to slope raster GeoTIFF
             compartment_path: Optional path to compartment GeoJSON
             title: Map title
@@ -68,20 +68,34 @@ class MapRenderer:
             Path to generated map file
         """
         try:
-            # Load data
-            gdf_boundary = gpd.read_file(boundary_path)
-            gdf_slope = gpd.read_file(slope_raster_path) if Path(slope_raster_path).exists() else None
-            gdf_compartments = gpd.read_file(compartment_path) if compartment_path else None
+            import os
+            from shapely.wkt import loads as wkt_loads
+            from shapely.geometry import shape
+            
+            # Load boundary - handle both file paths and WKT strings
+            if boundary_path.startswith('POLYGON') or boundary_path.startswith('MULTIPOLYGON'):
+                # It's a WKT string
+                geom = wkt_loads(boundary_path)
+                gdf_boundary = gpd.GeoDataFrame([1], geometry=[geom], crs='EPSG:4326')
+            else:
+                # It's a file path
+                gdf_boundary = gpd.read_file(boundary_path)
+            
+            # Load compartments if available
+            gdf_compartments = None
+            if compartment_path:
+                try:
+                    if os.path.exists(compartment_path):
+                        gdf_compartments = gpd.read_file(compartment_path)
+                except Exception as e:
+                    logger.warning(f"Could not load compartments from {compartment_path}: {str(e)}")
+                    gdf_compartments = None
 
             # Create figure
             fig, ax = plt.subplots(figsize=(12, 10))
 
             # Plot boundary
-            gdf_boundary.plot(ax=ax, alpha=0.3, edgecolor='black', linewidth=2)
-
-            # Plot slope data if available
-            if gdf_slope is not None:
-                gdf_slope.plot(ax=ax, alpha=0.6, edgecolor='none')
+            gdf_boundary.plot(ax=ax, alpha=0.3, edgecolor='black', linewidth=2, color='lightblue')
 
             # Plot compartments if available
             if gdf_compartments is not None:
@@ -109,7 +123,9 @@ class MapRenderer:
             return output_path
 
         except Exception as e:
+            import traceback
             logger.error(f"Error rendering slope map: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             raise ValueError(f"Failed to render slope map: {str(e)}")
 
     def render_aspect_map(
@@ -124,7 +140,7 @@ class MapRenderer:
         Render aspect direction map with compass legend and annotations.
         
         Args:
-            boundary_path: Path to boundary GeoJSON
+            boundary_path: Path to boundary GeoJSON or WKT geometry string
             aspect_raster_path: Path to aspect raster GeoTIFF
             compartment_path: Optional path to compartment GeoJSON
             title: Map title
@@ -134,20 +150,34 @@ class MapRenderer:
             Path to generated map file
         """
         try:
-            # Load data
-            gdf_boundary = gpd.read_file(boundary_path)
-            gdf_aspect = gpd.read_file(aspect_raster_path) if Path(aspect_raster_path).exists() else None
-            gdf_compartments = gpd.read_file(compartment_path) if compartment_path else None
+            import os
+            from shapely.wkt import loads as wkt_loads
+            from shapely.geometry import shape
+            
+            # Load boundary - handle both file paths and WKT strings
+            if boundary_path.startswith('POLYGON') or boundary_path.startswith('MULTIPOLYGON'):
+                # It's a WKT string
+                geom = wkt_loads(boundary_path)
+                gdf_boundary = gpd.GeoDataFrame([1], geometry=[geom], crs='EPSG:4326')
+            else:
+                # It's a file path
+                gdf_boundary = gpd.read_file(boundary_path)
+            
+            # Load compartments if available
+            gdf_compartments = None
+            if compartment_path:
+                try:
+                    if os.path.exists(compartment_path):
+                        gdf_compartments = gpd.read_file(compartment_path)
+                except Exception as e:
+                    logger.warning(f"Could not load compartments from {compartment_path}: {str(e)}")
+                    gdf_compartments = None
 
             # Create figure
             fig, ax = plt.subplots(figsize=(12, 10))
 
             # Plot boundary
-            gdf_boundary.plot(ax=ax, alpha=0.3, edgecolor='black', linewidth=2)
-
-            # Plot aspect data if available
-            if gdf_aspect is not None:
-                gdf_aspect.plot(ax=ax, alpha=0.6, edgecolor='none')
+            gdf_boundary.plot(ax=ax, alpha=0.3, edgecolor='black', linewidth=2, color='lightblue')
 
             # Plot compartments if available
             if gdf_compartments is not None:
@@ -175,7 +205,9 @@ class MapRenderer:
             return output_path
 
         except Exception as e:
+            import traceback
             logger.error(f"Error rendering aspect map: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             raise ValueError(f"Failed to render aspect map: {str(e)}")
 
     def render_compartment_map(
@@ -387,11 +419,11 @@ class MapRenderer:
         # Create filename
         safe_title = title.replace(' ', '_').lower()
         filename = f"{safe_title}.{output_format}"
-        filepath = Path(self.export_dir) / filename
+        filepath = os.path.join(self.export_dir, filename)
 
         # Save figure
         plt.tight_layout()
-        fig.savefig(str(filepath), dpi=300, format=output_format, bbox_inches='tight')
+        fig.savefig(filepath, dpi=300, format=output_format, bbox_inches='tight')
         plt.close(fig)
 
-        return str(filepath)
+        return filepath

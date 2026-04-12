@@ -17,7 +17,7 @@ import java.util.UUID;
  * Handles slope and aspect calculation requests.
  */
 @RestController
-@RequestMapping("/terrain")
+@RequestMapping("/api/terrain")
 @RequiredArgsConstructor
 @Slf4j
 @Tag(name = "Terrain Analysis", description = "Endpoints for slope and aspect analysis")
@@ -26,17 +26,18 @@ public class TerrainAnalysisController {
     private final TerrainAnalysisService terrainAnalysisService;
 
     /**
-     * Calculate slope from DEM.
+     * Calculate slope from DEM for an analysis.
      *
-     * @param demId DEM UUID
+     * @param analysisId Analysis UUID
      * @return Response with slope analysis status
      */
     @PostMapping("/slope")
     @Operation(summary = "Calculate slope", description = "Calculate slope from DEM and classify into categories")
-    public ResponseEntity<?> calculateSlope(@RequestParam UUID demId) {
+    public ResponseEntity<?> calculateSlope(@RequestParam String analysisId) {
         try {
-            log.info("Slope calculation request for DEM: {}", demId);
-            var response = terrainAnalysisService.calculateSlope(demId);
+            UUID id = UUID.fromString(analysisId);
+            log.info("Slope calculation request for analysis: {}", id);
+            var response = terrainAnalysisService.calculateSlopeForAnalysis(id);
             return ResponseEntity.accepted().body(response);
         } catch (IllegalArgumentException e) {
             log.warn("Invalid request: {}", e.getMessage());
@@ -48,17 +49,18 @@ public class TerrainAnalysisController {
     }
 
     /**
-     * Calculate aspect from DEM.
+     * Calculate aspect from DEM for an analysis.
      *
-     * @param demId DEM UUID
+     * @param analysisId Analysis UUID
      * @return Response with aspect analysis status
      */
     @PostMapping("/aspect")
     @Operation(summary = "Calculate aspect", description = "Calculate aspect from DEM and classify into cardinal directions")
-    public ResponseEntity<?> calculateAspect(@RequestParam UUID demId) {
+    public ResponseEntity<?> calculateAspect(@RequestParam String analysisId) {
         try {
-            log.info("Aspect calculation request for DEM: {}", demId);
-            var response = terrainAnalysisService.calculateAspect(demId);
+            UUID id = UUID.fromString(analysisId);
+            log.info("Aspect calculation request for analysis: {}", id);
+            var response = terrainAnalysisService.calculateAspectForAnalysis(id);
             return ResponseEntity.accepted().body(response);
         } catch (IllegalArgumentException e) {
             log.warn("Invalid request: {}", e.getMessage());

@@ -6,8 +6,7 @@ Calculates slope from DEM and classifies into categories.
 import logging
 from typing import Dict, Tuple
 import numpy as np
-import rasterio
-from rasterio.plot import show
+from osgeo import gdal
 import os
 from pathlib import Path
 
@@ -55,35 +54,31 @@ class SlopeCalculator:
         logger.info(f"Calculating slope from DEM: {dem_path}")
 
         try:
-            with rasterio.open(dem_path) as src:
-                dem_data = src.read(1).astype(np.float32)
-                dem_crs = src.crs
-                dem_transform = src.transform
+            # Open DEM with GDAL
+            dem_ds = gdal.Open(dem_path)
+            if dem_ds is None:
+                raise ValueError(f"Cannot open DEM file: {dem_path}")
+            
+            dem_band = dem_ds.GetRasterBand(1)
+            dem_data = dem_band.ReadAsArray().astype(np.float32)
+            
+            # Get geotransform and projection
+            geotransform = dem_ds.GetGeoTransform()
+            projection = dem_ds.GetProjection()
 
-                # Calculate slope using Zevenbergen & Thorne method
-                slope_degrees = self._calculate_slope_degrees(dem_data)
+            # Calculate slope using Zevenbergen & Thorne method
+            slope_degrees = self._calculate_slope_degrees(dem_data)
 
-                # Prepare output path
-                if output_path is None:
-                    output_path = os.path.join(self.export_dir, f"slope_{hash(dem_path)}.tif")
+            # Prepare output path
+            if output_path is None:
+                output_path = os.path.join(self.export_dir, f"slope_{hash(dem_path)}.tif")
 
-                # Save slope raster
-                with rasterio.open(
-                    output_path,
-                    'w',
-                    driver='GTiff',
-                    height=slope_degrees.shape[0],
-                    width=slope_degrees.shape[1],
-                    count=1,
-                    dtype=slope_degrees.dtype,
-                    crs=dem_crs,
-                    transform=dem_transform,
-                    nodata=-9999
-                ) as dst:
-                    dst.write(slope_degrees, 1)
+            # Save slope raster using GDAL
+            self._save_raster(output_path, slope_degrees, geotransform, projection, -9999)
 
-                logger.info(f"Slope raster saved: {output_path}")
-                return output_path
+            logger.info(f"Slope raster saved: {output_path}")
+            dem_ds = None  # Close dataset
+            return output_path
 
         except Exception as e:
             logger.error(f"Error calculating slope: {str(e)}")
@@ -110,35 +105,31 @@ class SlopeCalculator:
         logger.info(f"Classifying slope raster: {slope_path}")
 
         try:
-            with rasterio.open(slope_path) as src:
-                slope_data = src.read(1)
-                slope_crs = src.crs
-                slope_transform = src.transform
+            # Open slope raster with GDAL
+            slope_ds = gdal.Open(slope_path)
+            if slope_ds is None:
+                raise ValueError(f"Cannot open slope raster: {slope_path}")
+            
+            slope_band = slope_ds.GetRasterBand(1)
+            slope_data = slope_band.ReadAsArray()
+            
+            # Get geotransform and projection
+            geotransform = slope_ds.GetGeoTransform()
+            projection = slope_ds.GetProjection()
 
-                # Classify slope
-                classified = self._classify_slope_data(slope_data)
+            # Classify slope
+            classified = self._classify_slope_data(slope_data)
 
-                # Prepare output path
-                if output_path is None:
-                    output_path = os.path.join(self.export_dir, f"slope_classified_{hash(slope_path)}.tif")
+            # Prepare output path
+            if output_path is None:
+                output_path = os.path.join(self.export_dir, f"slope_classified_{hash(slope_path)}.tif")
 
-                # Save classified raster
-                with rasterio.open(
-                    output_path,
-                    'w',
-                    driver='GTiff',
-                    height=classified.shape[0],
-                    width=classified.shape[1],
-                    count=1,
-                    dtype=classified.dtype,
-                    crs=slope_crs,
-                    transform=slope_transform,
-                    nodata=0
-                ) as dst:
-                    dst.write(classified, 1)
+            # Save classified raster using GDAL
+            self._save_raster(output_path, classified, geotransform, projection, 0)
 
-                logger.info(f"Classified slope raster saved: {output_path}")
-                return output_path
+            logger.info(f"Classified slope raster saved: {output_path}")
+            slope_ds = None  # Close dataset
+            return output_path
 
         except Exception as e:
             logger.error(f"Error classifying slope: {str(e)}")
@@ -190,6 +181,41 @@ class SlopeCalculator:
 
         return classified
 
+    def _save_raster(self, output_path: str, data: np.ndarray, geotransform, projection, nodata):
+        """
+        Save raster data using GDAL.
+        
+        Args:
+            output_path: Output file path
+            data: Raster data array
+            geotransform: GDAL geotransform
+            projection: GDAL projection
+            nodata: NoData value
+        """
+        driver = gdal.GetDriverByName('GTiff')
+        height, width = data.shape
+        
+        # Determine data type
+        if data.dtype == np.uint8:
+            gdal_dtype = gdal.GDT_Byte
+        elif data.dtype == np.float32:
+            gdal_dtype = gdal.GDT_Float32
+        elif data.dtype == np.float64:
+            gdal_dtype = gdal.GDT_Float64
+        else:
+            gdal_dtype = gdal.GDT_Float32
+        
+        ds = driver.Create(output_path, width, height, 1, gdal_dtype)
+        ds.SetGeoTransform(geotransform)
+        ds.SetProjection(projection)
+        
+        band = ds.GetRasterBand(1)
+        band.WriteArray(data)
+        if nodata is not None:
+            band.SetNoDataValue(nodata)
+        
+        ds = None  # Close dataset
+
     def get_slope_statistics(self, slope_path: str) -> Dict:
         """
         Calculate statistics for slope raster.
@@ -201,22 +227,32 @@ class SlopeCalculator:
             Dictionary with slope statistics
         """
         try:
-            with rasterio.open(slope_path) as src:
-                slope_data = src.read(1)
+            # Open slope raster with GDAL
+            slope_ds = gdal.Open(slope_path)
+            if slope_ds is None:
+                raise ValueError(f"Cannot open slope raster: {slope_path}")
+            
+            slope_band = slope_ds.GetRasterBand(1)
+            slope_data = slope_band.ReadAsArray()
+            nodata = slope_band.GetNoDataValue()
 
-                # Remove nodata values
-                valid_data = slope_data[slope_data != src.nodata]
+            # Remove nodata values
+            if nodata is not None:
+                valid_data = slope_data[slope_data != nodata]
+            else:
+                valid_data = slope_data.flatten()
 
-                stats = {
-                    'min': float(np.min(valid_data)),
-                    'max': float(np.max(valid_data)),
-                    'mean': float(np.mean(valid_data)),
-                    'std': float(np.std(valid_data)),
-                    'median': float(np.median(valid_data))
-                }
+            stats = {
+                'min': float(np.min(valid_data)),
+                'max': float(np.max(valid_data)),
+                'mean': float(np.mean(valid_data)),
+                'std': float(np.std(valid_data)),
+                'median': float(np.median(valid_data))
+            }
 
-                logger.info(f"Slope statistics: {stats}")
-                return stats
+            logger.info(f"Slope statistics: {stats}")
+            slope_ds = None  # Close dataset
+            return stats
 
         except Exception as e:
             logger.error(f"Error calculating slope statistics: {str(e)}")

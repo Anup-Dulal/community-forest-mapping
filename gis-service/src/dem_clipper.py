@@ -5,9 +5,7 @@ Handles clipping DEM rasters to boundary polygons.
 
 import logging
 from typing import Dict
-import rasterio
-from rasterio.mask import mask
-from rasterio.io import MemoryFile
+from osgeo import gdal
 import geopandas as gpd
 from shapely.geometry import shape
 import os
@@ -58,47 +56,53 @@ class DEMClipper:
             if not boundary_geom.is_valid:
                 raise ValueError("Invalid boundary geometry")
 
-            # Open DEM raster
-            with rasterio.open(dem_path) as src:
-                # Get DEM CRS
-                dem_crs = src.crs
+            # Open DEM raster with GDAL
+            dem_ds = gdal.Open(dem_path)
+            if dem_ds is None:
+                raise ValueError(f"Cannot open DEM file: {dem_path}")
+            
+            dem_band = dem_ds.GetRasterBand(1)
+            dem_data = dem_band.ReadAsArray()
+            geotransform = dem_ds.GetGeoTransform()
+            projection = dem_ds.GetProjection()
+            nodata = dem_band.GetNoDataValue()
 
-                logger.info(f"DEM CRS: {dem_crs}")
+            logger.info(f"DEM projection: {projection}")
 
-                # Reproject boundary to DEM CRS if needed
-                if dem_crs and dem_crs != 'EPSG:4326':
-                    logger.info(f"Reprojecting boundary from EPSG:4326 to {dem_crs}")
-                    boundary_geom = self._reproject_geometry(boundary_geom, 'EPSG:4326', dem_crs)
+            # For now, use simple bounding box clipping
+            # Full polygon clipping would require more complex rasterization
+            bounds = boundary_geom.bounds
+            
+            # Convert bounds to pixel coordinates
+            x_min, y_min, x_max, y_max = bounds
+            
+            # Calculate pixel indices from geotransform
+            # geotransform = (x_origin, pixel_width, 0, y_origin, 0, -pixel_height)
+            x_origin, pixel_width, _, y_origin, _, pixel_height = geotransform
+            
+            col_min = max(0, int((x_min - x_origin) / pixel_width))
+            col_max = min(dem_data.shape[1], int((x_max - x_origin) / pixel_width) + 1)
+            row_min = max(0, int((y_origin - y_max) / abs(pixel_height)))
+            row_max = min(dem_data.shape[0], int((y_origin - y_min) / abs(pixel_height)) + 1)
+            
+            # Clip data
+            clipped_data = dem_data[row_min:row_max, col_min:col_max]
+            
+            # Update geotransform for clipped raster
+            new_x_origin = x_origin + col_min * pixel_width
+            new_y_origin = y_origin + row_min * pixel_height
+            clipped_geotransform = (new_x_origin, pixel_width, 0, new_y_origin, 0, pixel_height)
+            
+            # Prepare output path
+            if output_path is None:
+                output_path = os.path.join(self.export_dir, f"dem_clipped_{hash(str(boundary_geometry))}.tif")
 
-                # Clip raster to boundary
-                clipped_data, clipped_transform = mask(
-                    src,
-                    [boundary_geom],
-                    crop=True,
-                    nodata=src.nodata
-                )
+            # Save clipped raster using GDAL
+            self._save_raster(output_path, clipped_data, clipped_geotransform, projection, nodata)
 
-                # Prepare output path
-                if output_path is None:
-                    output_path = os.path.join(self.export_dir, f"dem_clipped_{hash(str(boundary_geometry))}.tif")
-
-                # Save clipped raster
-                with rasterio.open(
-                    output_path,
-                    'w',
-                    driver='GTiff',
-                    height=clipped_data.shape[1],
-                    width=clipped_data.shape[2],
-                    count=clipped_data.shape[0],
-                    dtype=clipped_data.dtype,
-                    crs=dem_crs,
-                    transform=clipped_transform,
-                    nodata=src.nodata
-                ) as dst:
-                    dst.write(clipped_data)
-
-                logger.info(f"Clipped DEM saved: {output_path}")
-                return output_path
+            logger.info(f"Clipped DEM saved: {output_path}")
+            dem_ds = None  # Close dataset
+            return output_path
 
         except Exception as e:
             logger.error(f"Error clipping DEM: {str(e)}")
@@ -121,29 +125,41 @@ class DEMClipper:
         try:
             boundary_geom = shape(boundary_geometry)
 
-            with rasterio.open(clipped_dem_path) as src:
-                # Get bounds of clipped DEM
-                dem_bounds = src.bounds
-                dem_crs = src.crs
+            # Open clipped DEM with GDAL
+            dem_ds = gdal.Open(clipped_dem_path)
+            if dem_ds is None:
+                raise ValueError(f"Cannot open clipped DEM: {clipped_dem_path}")
+            
+            geotransform = dem_ds.GetGeoTransform()
+            
+            # Get bounds of clipped DEM from geotransform
+            x_origin, pixel_width, _, y_origin, _, pixel_height = geotransform
+            width = dem_ds.RasterXSize
+            height = dem_ds.RasterYSize
+            
+            dem_bounds = (
+                x_origin,
+                y_origin + height * pixel_height,
+                x_origin + width * pixel_width,
+                y_origin
+            )
 
-                # Reproject boundary if needed
-                if dem_crs and dem_crs != 'EPSG:4326':
-                    boundary_geom = self._reproject_geometry(boundary_geom, 'EPSG:4326', dem_crs)
+            # Check if DEM bounds are within boundary
+            boundary_bounds = boundary_geom.bounds
 
-                # Check if DEM bounds are within boundary
-                boundary_bounds = boundary_geom.bounds
+            # Verify DEM is within boundary (with small tolerance)
+            tolerance = 0.0001
+            if (dem_bounds[0] < boundary_bounds[0] - tolerance or
+                dem_bounds[1] < boundary_bounds[1] - tolerance or
+                dem_bounds[2] > boundary_bounds[2] + tolerance or
+                dem_bounds[3] > boundary_bounds[3] + tolerance):
+                logger.warning("Clipped DEM extends beyond boundary")
+                dem_ds = None
+                return False
 
-                # Verify DEM is within boundary (with small tolerance)
-                tolerance = 0.0001
-                if (dem_bounds.left < boundary_bounds[0] - tolerance or
-                    dem_bounds.bottom < boundary_bounds[1] - tolerance or
-                    dem_bounds.right > boundary_bounds[2] + tolerance or
-                    dem_bounds.top > boundary_bounds[3] + tolerance):
-                    logger.warning("Clipped DEM extends beyond boundary")
-                    return False
-
-                logger.info("Clipped DEM validation passed")
-                return True
+            logger.info("Clipped DEM validation passed")
+            dem_ds = None
+            return True
 
         except Exception as e:
             logger.error(f"Error validating clipped DEM: {str(e)}")
@@ -184,3 +200,42 @@ class DEMClipper:
         except Exception as e:
             logger.error(f"Error reprojecting geometry: {str(e)}")
             raise ValueError(f"Failed to reproject geometry: {str(e)}")
+
+    def _save_raster(self, output_path: str, data, geotransform, projection, nodata):
+        """
+        Save raster data using GDAL.
+        
+        Args:
+            output_path: Output file path
+            data: Raster data array
+            geotransform: GDAL geotransform
+            projection: GDAL projection
+            nodata: NoData value
+        """
+        import numpy as np
+        
+        driver = gdal.GetDriverByName('GTiff')
+        height, width = data.shape
+        
+        # Determine data type
+        if data.dtype == np.uint8:
+            gdal_dtype = gdal.GDT_Byte
+        elif data.dtype == np.float32:
+            gdal_dtype = gdal.GDT_Float32
+        elif data.dtype == np.float64:
+            gdal_dtype = gdal.GDT_Float64
+        elif data.dtype == np.int32:
+            gdal_dtype = gdal.GDT_Int32
+        else:
+            gdal_dtype = gdal.GDT_Float32
+        
+        ds = driver.Create(output_path, width, height, 1, gdal_dtype)
+        ds.SetGeoTransform(geotransform)
+        ds.SetProjection(projection)
+        
+        band = ds.GetRasterBand(1)
+        band.WriteArray(data)
+        if nodata is not None:
+            band.SetNoDataValue(nodata)
+        
+        ds = None  # Close dataset

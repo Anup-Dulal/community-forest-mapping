@@ -135,6 +135,108 @@ public class SamplePlotService {
     }
 
     /**
+     * Generate sample plots for hierarchical compartments (sub-compartments).
+     * Ensures minimum 5 plots per SUB-COMPARTMENT (not parent compartment).
+     *
+     * @param analysisResultId ID of the analysis result
+     * @param compartmentGeometryPath Path to compartment GeoJSON file
+     * @param samplingIntensity Sampling intensity as fraction (default 0.02 = 2%)
+     * @param minPlotsPerCompartment Minimum plots per sub-compartment (default 5)
+     * @param distributionMethod "systematic" or "random"
+     * @return SamplePlotResponse with generation status
+     * @throws IllegalArgumentException if analysis result not found
+     */
+    public SamplePlotResponse generateHierarchicalSamplePlots(
+            UUID analysisResultId,
+            String compartmentGeometryPath,
+            Double samplingIntensity,
+            Integer minPlotsPerCompartment,
+            String distributionMethod
+    ) {
+        try {
+            // Validate analysis result exists
+            AnalysisResult analysisResult = analysisResultRepository.findById(analysisResultId)
+                    .orElseThrow(() -> new IllegalArgumentException("Analysis result not found: " + analysisResultId));
+
+            // Set defaults
+            if (samplingIntensity == null) {
+                samplingIntensity = 0.02;
+            }
+            if (minPlotsPerCompartment == null) {
+                minPlotsPerCompartment = 5;
+            }
+            if (distributionMethod == null || distributionMethod.isEmpty()) {
+                distributionMethod = "systematic";
+            }
+
+            log.info("Generating hierarchical sample plots for analysis: {}", analysisResultId);
+            log.info("Compartment geometry path: {}", compartmentGeometryPath);
+
+            // Call GIS microservice to generate hierarchical sample plots
+            Map<String, Object> gisRequest = new HashMap<>();
+            gisRequest.put("compartmentGeometryPath", compartmentGeometryPath);
+            gisRequest.put("samplingIntensity", samplingIntensity);
+            gisRequest.put("minPlotsPerCompartment", minPlotsPerCompartment);
+            gisRequest.put("distributionMethod", distributionMethod);
+            gisRequest.put("analysisId", analysisResultId.toString());
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            HttpEntity<Map<String, Object>> request = new HttpEntity<>(gisRequest, headers);
+
+            JsonNode gisResponse = restTemplate.postForObject(
+                    gisServiceUrl + "/api/sample-plots/generate-hierarchical",
+                    request,
+                    JsonNode.class
+            );
+
+            if (gisResponse == null) {
+                throw new RuntimeException("GIS service returned null response");
+            }
+
+            // Extract sample plot geometry path from response
+            String samplePlotGeometryPath = gisResponse.get("samplePlotGeometryPath").asText();
+
+            // Update analysis result with sample plot geometry path
+            analysisResult.setSamplePlotGeometryPath(samplePlotGeometryPath);
+            analysisResultRepository.save(analysisResult);
+
+            log.info("Hierarchical sample plots generated successfully: {}", samplePlotGeometryPath);
+
+            // Build response
+            SamplePlotResponse response = SamplePlotResponse.builder()
+                    .status("success")
+                    .analysisId(analysisResultId)
+                    .samplePlotGeometryPath(samplePlotGeometryPath)
+                    .build();
+
+            // Add statistics if available
+            if (gisResponse.has("statistics")) {
+                JsonNode stats = gisResponse.get("statistics");
+                if (stats.has("totalPlots")) {
+                    response.setTotalPlots(stats.get("totalPlots").asInt());
+                }
+                if (stats.has("minPlots")) {
+                    response.setMinPlots(stats.get("minPlots").asInt());
+                }
+                if (stats.has("maxPlots")) {
+                    response.setMaxPlots(stats.get("maxPlots").asInt());
+                }
+                if (stats.has("avgPlots")) {
+                    response.setAvgPlots(stats.get("avgPlots").asDouble());
+                }
+            }
+
+            return response;
+
+        } catch (Exception e) {
+            log.error("Error generating hierarchical sample plots", e);
+            throw new RuntimeException("Failed to generate hierarchical sample plots: " + e.getMessage());
+        }
+    }
+
+
+    /**
      * Convert sample plot coordinates from lat/lon to UTM.
      *
      * @param samplePlotId ID of the sample plot

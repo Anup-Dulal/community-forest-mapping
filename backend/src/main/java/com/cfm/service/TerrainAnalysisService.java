@@ -133,7 +133,7 @@ public class TerrainAnalysisService {
                 request.put("demPath", demPath);
 
                 // Call GIS service
-                String url = gisServiceUrl + "/api/terrain/slope";
+                String url = gisServiceUrl + "/calculate-slope";
                 var response = restTemplate.postForObject(url, request, Map.class);
 
                 if (response != null && "success".equals(response.get("status"))) {
@@ -179,7 +179,7 @@ public class TerrainAnalysisService {
                 request.put("demPath", demPath);
 
                 // Call GIS service
-                String url = gisServiceUrl + "/api/terrain/aspect";
+                String url = gisServiceUrl + "/calculate-aspect";
                 var response = restTemplate.postForObject(url, request, Map.class);
 
                 if (response != null && "success".equals(response.get("status"))) {
@@ -206,5 +206,99 @@ public class TerrainAnalysisService {
                 }
             }
         }).start();
+    }
+
+    /**
+     * Calculate slope for an analysis (using analysisId directly).
+     * Gets DEM from analysis and calculates slope.
+     *
+     * @param analysisId Analysis UUID
+     * @return Response with slope analysis status
+     * @throws IllegalArgumentException if analysis not found
+     */
+    public Map<String, Object> calculateSlopeForAnalysis(UUID analysisId) {
+        log.info("Starting slope calculation for analysis: {}", analysisId);
+
+        try {
+            // Get analysis
+            AnalysisResult analysis = analysisResultRepository.findById(analysisId)
+                .orElseThrow(() -> new IllegalArgumentException("Analysis not found: " + analysisId));
+
+            // Get DEM - try from analysis first, then by shapefileId
+            DEM dem = analysis.getDem();
+            if (dem == null) {
+                log.info("DEM not linked to analysis, searching by shapefileId");
+                dem = demRepository.findByShapefileId(analysis.getShapefile().getId())
+                    .orElseThrow(() -> new IllegalArgumentException("No DEM found for shapefile: " + analysis.getShapefile().getId()));
+                
+                // Link DEM to analysis for future use
+                analysis.setDem(dem);
+                analysisResultRepository.save(analysis);
+                log.info("Linked DEM {} to analysis {}", dem.getId(), analysisId);
+            }
+
+            analysis.setStatus("processing");
+            analysisResultRepository.save(analysis);
+
+            // Call GIS service to calculate slope
+            calculateSlopeViaGIS(analysisId, dem.getClippedRasterPath());
+
+            return Map.of(
+                "analysisId", analysisId.toString(),
+                "status", "processing",
+                "message", "Slope calculation started"
+            );
+
+        } catch (Exception e) {
+            log.error("Error starting slope calculation", e);
+            throw new RuntimeException("Failed to start slope calculation: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Calculate aspect for an analysis (using analysisId directly).
+     * Gets DEM from analysis and calculates aspect.
+     *
+     * @param analysisId Analysis UUID
+     * @return Response with aspect analysis status
+     * @throws IllegalArgumentException if analysis not found
+     */
+    public Map<String, Object> calculateAspectForAnalysis(UUID analysisId) {
+        log.info("Starting aspect calculation for analysis: {}", analysisId);
+
+        try {
+            // Get analysis
+            AnalysisResult analysis = analysisResultRepository.findById(analysisId)
+                .orElseThrow(() -> new IllegalArgumentException("Analysis not found: " + analysisId));
+
+            // Get DEM - try from analysis first, then by shapefileId
+            DEM dem = analysis.getDem();
+            if (dem == null) {
+                log.info("DEM not linked to analysis, searching by shapefileId");
+                dem = demRepository.findByShapefileId(analysis.getShapefile().getId())
+                    .orElseThrow(() -> new IllegalArgumentException("No DEM found for shapefile: " + analysis.getShapefile().getId()));
+                
+                // Link DEM to analysis for future use
+                analysis.setDem(dem);
+                analysisResultRepository.save(analysis);
+                log.info("Linked DEM {} to analysis {}", dem.getId(), analysisId);
+            }
+
+            analysis.setStatus("processing");
+            analysisResultRepository.save(analysis);
+
+            // Call GIS service to calculate aspect
+            calculateAspectViaGIS(analysisId, dem.getClippedRasterPath());
+
+            return Map.of(
+                "analysisId", analysisId.toString(),
+                "status", "processing",
+                "message", "Aspect calculation started"
+            );
+
+        } catch (Exception e) {
+            log.error("Error starting aspect calculation", e);
+            throw new RuntimeException("Failed to start aspect calculation: " + e.getMessage());
+        }
     }
 }

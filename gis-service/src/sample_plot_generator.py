@@ -50,19 +50,21 @@ class SamplePlotGenerator:
             ValueError: If compartment file is invalid or generation fails
         """
         try:
-            # Load compartment geometries
-            gdf_compartments = gpd.read_file(compartment_geometry_path)
+            # Load compartment geometries from GeoJSON directly to avoid fiona issues
+            with open(compartment_geometry_path, 'r') as f:
+                geojson_data = json.load(f)
             
-            if gdf_compartments.empty:
+            features = geojson_data.get('features', [])
+            if not features:
                 raise ValueError("Compartment file is empty")
             
             # Generate sample plots
             sample_plots = []
             self.plot_counter = 0
             
-            for idx, row in gdf_compartments.iterrows():
-                compartment_id = row.get('compartment_id', f'C{idx+1}')
-                geometry = row.geometry
+            for feature in features:
+                compartment_id = feature.get('properties', {}).get('compartment_id', f'C{len(sample_plots)+1}')
+                geometry = shape(feature['geometry'])
                 
                 # Calculate number of plots for this compartment
                 area_m2 = geometry.area  # Area in square meters (assuming projected CRS)
@@ -80,16 +82,32 @@ class SamplePlotGenerator:
                 )
                 sample_plots.extend(plots)
             
-            # Create GeoDataFrame
-            gdf_plots = gpd.GeoDataFrame(
-                sample_plots,
-                geometry='geometry',
-                crs=gdf_compartments.crs
-            )
+            # Create GeoJSON output
+            output_features = []
+            for plot in sample_plots:
+                output_features.append({
+                    'type': 'Feature',
+                    'properties': {
+                        'plot_id': plot['plot_id'],
+                        'compartment_id': plot['compartment_id'],
+                        'latitude': plot['latitude'],
+                        'longitude': plot['longitude']
+                    },
+                    'geometry': {
+                        'type': 'Point',
+                        'coordinates': [plot['geometry'].x, plot['geometry'].y]
+                    }
+                })
+            
+            output_geojson = {
+                'type': 'FeatureCollection',
+                'features': output_features
+            }
             
             # Save to GeoJSON
             output_path = f"{self.export_dir}/sample_plots.geojson"
-            gdf_plots.to_file(output_path, driver='GeoJSON')
+            with open(output_path, 'w') as f:
+                json.dump(output_geojson, f)
             
             logger.info(f"Generated {len(sample_plots)} sample plots")
             return output_path
@@ -256,17 +274,24 @@ class SamplePlotGenerator:
             Dictionary with statistics
         """
         try:
-            gdf = gpd.read_file(sample_plot_path)
+            # Read GeoJSON directly to avoid fiona issues
+            with open(sample_plot_path, 'r') as f:
+                geojson_data = json.load(f)
+            
+            features = geojson_data.get('features', [])
             
             # Group by compartment
-            compartment_stats = gdf.groupby('compartment_id').size().to_dict()
+            compartment_stats = {}
+            for feature in features:
+                compartment_id = feature.get('properties', {}).get('compartment_id', 'Unknown')
+                compartment_stats[compartment_id] = compartment_stats.get(compartment_id, 0) + 1
             
             stats = {
-                'total_plots': len(gdf),
+                'total_plots': len(features),
                 'plots_per_compartment': compartment_stats,
                 'min_plots': min(compartment_stats.values()) if compartment_stats else 0,
                 'max_plots': max(compartment_stats.values()) if compartment_stats else 0,
-                'avg_plots': len(gdf) / len(compartment_stats) if compartment_stats else 0
+                'avg_plots': len(features) / len(compartment_stats) if compartment_stats else 0
             }
             
             return stats

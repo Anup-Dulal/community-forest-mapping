@@ -1,5 +1,6 @@
 import React from 'react';
 import './App.css';
+import './styles/compartment-labels.css';
 import DashboardLayout from './components/DashboardLayout';
 
 /**
@@ -8,7 +9,7 @@ import DashboardLayout from './components/DashboardLayout';
  */
 function App() {
   return (
-    <div className="app">
+    <div className="w-screen h-screen overflow-hidden">
       <DashboardLayout />
     </div>
   );

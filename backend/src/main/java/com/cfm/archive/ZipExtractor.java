@@ -1,18 +1,17 @@
 package com.cfm.archive;
 
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.compress.archivers.zip.ZipFile;
-import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
 import org.springframework.stereotype.Component;
 
 import java.io.*;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Enumeration;
 import java.util.List;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 /**
- * Extracts ZIP archives using Apache Commons Compress.
+ * Extracts ZIP archives using Java's built-in ZIP support.
  */
 @Slf4j
 @Component
@@ -28,12 +27,10 @@ public class ZipExtractor {
     public List<Path> extract(File zipFile, Path targetDirectory) throws IOException {
         List<Path> extractedFiles = new ArrayList<>();
         
-        try (ZipFile zip = new ZipFile(zipFile)) {
-            Enumeration<ZipArchiveEntry> entries = zip.getEntries();
+        try (ZipInputStream zis = new ZipInputStream(new FileInputStream(zipFile))) {
+            ZipEntry entry;
             
-            while (entries.hasMoreElements()) {
-                ZipArchiveEntry entry = entries.nextElement();
-                
+            while ((entry = zis.getNextEntry()) != null) {
                 if (entry.isDirectory()) {
                     continue;
                 }
@@ -50,11 +47,10 @@ public class ZipExtractor {
                 Path targetFile = targetDirectory.resolve(filename);
                 
                 // Extract file
-                try (InputStream is = zip.getInputStream(entry);
-                     OutputStream os = new FileOutputStream(targetFile.toFile())) {
+                try (OutputStream os = new FileOutputStream(targetFile.toFile())) {
                     byte[] buffer = new byte[8192];
                     int bytesRead;
-                    while ((bytesRead = is.read(buffer)) != -1) {
+                    while ((bytesRead = zis.read(buffer)) != -1) {
                         os.write(buffer, 0, bytesRead);
                     }
                 }

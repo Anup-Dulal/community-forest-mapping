@@ -1,6 +1,7 @@
 package com.cfm.service;
 
 import com.cfm.model.AnalysisResult;
+import com.cfm.model.DEM;
 import com.cfm.repository.AnalysisResultRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -49,6 +50,17 @@ public class MapExportService {
             if (analysisResult.getShapefile() == null || analysisResult.getShapefile().getGeometry() == null) {
                 throw new IllegalArgumentException("Boundary geometry not found");
             }
+
+            // If slope raster not found, calculate it first
+            if (analysisResult.getSlopeRasterPath() == null || analysisResult.getSlopeRasterPath().isEmpty()) {
+                log.info("Slope raster not found, calculating slope first");
+                calculateSlopeIfMissing(analysisResult);
+                
+                // Refresh analysis result from database
+                analysisResult = analysisResultRepository.findById(analysisResultId)
+                        .orElseThrow(() -> new IllegalArgumentException("Analysis result not found after slope calculation"));
+            }
+
             if (analysisResult.getSlopeRasterPath() == null || analysisResult.getSlopeRasterPath().isEmpty()) {
                 throw new IllegalArgumentException("Slope raster not found");
             }
@@ -57,10 +69,10 @@ public class MapExportService {
 
             // Call GIS microservice
             Map<String, Object> gisRequest = new HashMap<>();
+            gisRequest.put("mapType", "slope");
             gisRequest.put("boundaryPath", analysisResult.getShapefile().getGeometry());
             gisRequest.put("slopeRasterPath", analysisResult.getSlopeRasterPath());
             gisRequest.put("compartmentPath", analysisResult.getCompartmentGeometryPath());
-            gisRequest.put("title", "Slope Classification Map");
             gisRequest.put("outputFormat", outputFormat);
             gisRequest.put("analysisId", analysisResultId.toString());
 
@@ -69,7 +81,7 @@ public class MapExportService {
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(gisRequest, headers);
 
             JsonNode gisResponse = restTemplate.postForObject(
-                    gisServiceUrl + "/api/maps/render-slope",
+                    gisServiceUrl + "/api/maps/render",
                     request,
                     JsonNode.class
             );
@@ -99,6 +111,45 @@ public class MapExportService {
         }
     }
 
+    private void calculateSlopeIfMissing(AnalysisResult analysisResult) {
+        try {
+            if (analysisResult.getDem() == null) {
+                log.warn("No DEM found for analysis, cannot calculate slope");
+                return;
+            }
+
+            DEM dem = analysisResult.getDem();
+            if (dem.getClippedRasterPath() == null || dem.getClippedRasterPath().isEmpty()) {
+                log.warn("No clipped raster path found for DEM, cannot calculate slope");
+                return;
+            }
+
+            log.info("Calculating slope for DEM: {}", dem.getId());
+
+            // Prepare request
+            Map<String, Object> request = new HashMap<>();
+            request.put("analysisId", analysisResult.getId().toString());
+            request.put("demPath", dem.getClippedRasterPath());
+
+            // Call GIS service
+            String url = gisServiceUrl + "/calculate-slope";
+            var response = restTemplate.postForObject(url, request, Map.class);
+
+            if (response != null && "success".equals(response.get("status"))) {
+                // Update analysis result
+                analysisResult.setSlopeRasterPath((String) response.get("slopeRasterPath"));
+                analysisResult.setStatus("complete");
+                analysisResultRepository.save(analysisResult);
+                log.info("Slope calculation successful for analysis: {}", analysisResult.getId());
+            } else {
+                log.error("GIS service failed to calculate slope");
+            }
+
+        } catch (Exception e) {
+            log.error("Error calculating slope: {}", e.getMessage(), e);
+        }
+    }
+
     /**
      * Render and export aspect map.
      *
@@ -117,6 +168,17 @@ public class MapExportService {
             if (analysisResult.getShapefile() == null || analysisResult.getShapefile().getGeometry() == null) {
                 throw new IllegalArgumentException("Boundary geometry not found");
             }
+
+            // If aspect raster not found, calculate it first
+            if (analysisResult.getAspectRasterPath() == null || analysisResult.getAspectRasterPath().isEmpty()) {
+                log.info("Aspect raster not found, calculating aspect first");
+                calculateAspectIfMissing(analysisResult);
+                
+                // Refresh analysis result from database
+                analysisResult = analysisResultRepository.findById(analysisResultId)
+                        .orElseThrow(() -> new IllegalArgumentException("Analysis result not found after aspect calculation"));
+            }
+
             if (analysisResult.getAspectRasterPath() == null || analysisResult.getAspectRasterPath().isEmpty()) {
                 throw new IllegalArgumentException("Aspect raster not found");
             }
@@ -125,10 +187,10 @@ public class MapExportService {
 
             // Call GIS microservice
             Map<String, Object> gisRequest = new HashMap<>();
+            gisRequest.put("mapType", "aspect");
             gisRequest.put("boundaryPath", analysisResult.getShapefile().getGeometry());
             gisRequest.put("aspectRasterPath", analysisResult.getAspectRasterPath());
             gisRequest.put("compartmentPath", analysisResult.getCompartmentGeometryPath());
-            gisRequest.put("title", "Aspect Direction Map");
             gisRequest.put("outputFormat", outputFormat);
             gisRequest.put("analysisId", analysisResultId.toString());
 
@@ -137,7 +199,7 @@ public class MapExportService {
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(gisRequest, headers);
 
             JsonNode gisResponse = restTemplate.postForObject(
-                    gisServiceUrl + "/api/maps/render-aspect",
+                    gisServiceUrl + "/api/maps/render",
                     request,
                     JsonNode.class
             );
@@ -164,6 +226,45 @@ public class MapExportService {
         } catch (Exception e) {
             log.error("Error rendering aspect map: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to render aspect map: " + e.getMessage(), e);
+        }
+    }
+
+    private void calculateAspectIfMissing(AnalysisResult analysisResult) {
+        try {
+            if (analysisResult.getDem() == null) {
+                log.warn("No DEM found for analysis, cannot calculate aspect");
+                return;
+            }
+
+            DEM dem = analysisResult.getDem();
+            if (dem.getClippedRasterPath() == null || dem.getClippedRasterPath().isEmpty()) {
+                log.warn("No clipped raster path found for DEM, cannot calculate aspect");
+                return;
+            }
+
+            log.info("Calculating aspect for DEM: {}", dem.getId());
+
+            // Prepare request
+            Map<String, Object> request = new HashMap<>();
+            request.put("analysisId", analysisResult.getId().toString());
+            request.put("demPath", dem.getClippedRasterPath());
+
+            // Call GIS service
+            String url = gisServiceUrl + "/calculate-aspect";
+            var response = restTemplate.postForObject(url, request, Map.class);
+
+            if (response != null && "success".equals(response.get("status"))) {
+                // Update analysis result
+                analysisResult.setAspectRasterPath((String) response.get("aspectRasterPath"));
+                analysisResult.setStatus("complete");
+                analysisResultRepository.save(analysisResult);
+                log.info("Aspect calculation successful for analysis: {}", analysisResult.getId());
+            } else {
+                log.error("GIS service failed to calculate aspect");
+            }
+
+        } catch (Exception e) {
+            log.error("Error calculating aspect: {}", e.getMessage(), e);
         }
     }
 

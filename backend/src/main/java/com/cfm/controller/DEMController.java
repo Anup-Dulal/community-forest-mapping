@@ -17,7 +17,7 @@ import java.util.UUID;
  * Handles automatic DEM download and status tracking.
  */
 @RestController
-@RequestMapping("/dem")
+@RequestMapping("/api/dem")
 @RequiredArgsConstructor
 @Slf4j
 @Tag(name = "DEM Management", description = "Endpoints for DEM download and processing")
@@ -36,12 +36,13 @@ public class DEMController {
     @PostMapping("/download")
     @Operation(summary = "Download DEM", description = "Trigger automatic DEM download for shapefile")
     public ResponseEntity<DEMStatusResponse> downloadDEM(
-        @RequestParam UUID shapefileId,
+        @RequestParam String shapefileId,
         @RequestParam(defaultValue = "SRTM") String source
     ) {
         try {
-            log.info("DEM download request for shapefile: {} from source: {}", shapefileId, source);
-            DEMStatusResponse response = demDownloadService.downloadDEM(shapefileId, source);
+            UUID id = UUID.fromString(shapefileId);
+            log.info("DEM download request for shapefile: {} from source: {}", id, source);
+            DEMStatusResponse response = demDownloadService.downloadDEM(id, source);
             return ResponseEntity.accepted().body(response);
         } catch (IllegalArgumentException e) {
             log.warn("Invalid request: {}", e.getMessage());
@@ -60,10 +61,11 @@ public class DEMController {
      */
     @GetMapping("/{demId}/status")
     @Operation(summary = "Get DEM status", description = "Retrieve current DEM download and processing status")
-    public ResponseEntity<DEMStatusResponse> getDEMStatus(@PathVariable UUID demId) {
+    public ResponseEntity<DEMStatusResponse> getDEMStatus(@PathVariable String demId) {
         try {
-            log.info("Retrieving DEM status: {}", demId);
-            DEMStatusResponse response = demDownloadService.getDEMStatus(demId);
+            UUID id = UUID.fromString(demId);
+            log.info("Retrieving DEM status: {}", id);
+            DEMStatusResponse response = demDownloadService.getDEMStatus(id);
             return ResponseEntity.ok(response);
         } catch (IllegalArgumentException e) {
             log.warn("DEM not found: {}", demId);

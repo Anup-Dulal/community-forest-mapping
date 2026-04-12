@@ -34,9 +34,16 @@ public class SessionController {
 
     @GetMapping("/{sessionId}/validate")
     public ResponseEntity<Map<String, Object>> validateDataPersistence(
-            @RequestParam UUID analysisResultId) {
-        Map<String, Object> validationResult = sessionService.validateDataPersistence(analysisResultId);
-        return ResponseEntity.ok(validationResult);
+            @RequestParam String analysisResultId) {
+        try {
+            UUID id = UUID.fromString(analysisResultId);
+            Map<String, Object> validationResult = sessionService.validateDataPersistence(id);
+            return ResponseEntity.ok(validationResult);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(
+                Map.of("error", "Invalid analysis result ID format")
+            );
+        }
     }
 
     @DeleteMapping("/{sessionId}")

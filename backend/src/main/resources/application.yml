@@ -3,17 +3,17 @@ spring:
     name: community-forest-mapping
   
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:sqlite:./cfm.db}
-    username: ${SPRING_DATASOURCE_USERNAME:}
+    url: ${SPRING_DATASOURCE_URL:jdbc:h2:file:./cfm-db;MODE=MySQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE}
+    username: ${SPRING_DATASOURCE_USERNAME:sa}
     password: ${SPRING_DATASOURCE_PASSWORD:}
-    driver-class-name: org.sqlite.JDBC
+    driver-class-name: org.h2.Driver
   
   jpa:
     hibernate:
       ddl-auto: update
     properties:
       hibernate:
-        dialect: org.hibernate.community.dialect.SQLiteDialect
+        dialect: org.hibernate.dialect.H2Dialect
         format_sql: true
         jdbc:
           batch_size: 20
@@ -27,8 +27,6 @@ spring:
 
 server:
   port: 8080
-  servlet:
-    context-path: /api
 
 logging:
   level:

@@ -18,6 +18,7 @@ const UploadPanel: React.FC<UploadPanelProps> = ({ onClose }) => {
 
   const setUploadStatus = useAppStore((state) => state.setUploadStatus);
   const setCurrentAnalysisId = useAppStore((state) => state.setCurrentAnalysisId);
+  const setCurrentShapefileId = useAppStore((state) => state.setCurrentShapefileId);
 
   const REQUIRED_FILES = ['.shp', '.shx', '.dbf', '.prj'];
   const ARCHIVE_FILES = ['.zip', '.rar'];
@@ -99,7 +100,12 @@ const UploadPanel: React.FC<UploadPanelProps> = ({ onClose }) => {
           status: 'success',
           message: 'Shapefile uploaded successfully',
         });
-        setCurrentAnalysisId(data.shapefileId);
+        // Convert UUID to string to ensure proper format
+        const shapefileIdString = typeof data.shapefileId === 'string' 
+          ? data.shapefileId 
+          : String(data.shapefileId);
+        setCurrentAnalysisId(shapefileIdString);
+        setCurrentShapefileId(shapefileIdString); // Store shapefile ID separately
         setFiles([]);
         setError(null);
 
@@ -108,12 +114,22 @@ const UploadPanel: React.FC<UploadPanelProps> = ({ onClose }) => {
           onClose();
         }, 1500);
       } else {
-        const errorData = await response.json();
-        setError(errorData.error || 'Upload failed');
-        setUploadStatus({
-          status: 'error',
-          message: errorData.error || 'Upload failed',
-        });
+        try {
+          const errorData = await response.json();
+          setError(errorData.error || errorData.message || 'Upload failed');
+          setUploadStatus({
+            status: 'error',
+            message: errorData.error || errorData.message || 'Upload failed',
+          });
+        } catch (parseError) {
+          // If response is not JSON, use status text
+          const errorMessage = response.statusText || `Upload failed (${response.status})`;
+          setError(errorMessage);
+          setUploadStatus({
+            status: 'error',
+            message: errorMessage,
+          });
+        }
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Upload failed';
@@ -194,7 +210,6 @@ const UploadPanel: React.FC<UploadPanelProps> = ({ onClose }) => {
           multiple
           onChange={handleFileSelect}
           className="file-input"
-          accept=".shp,.shx,.dbf,.prj,.zip,.rar"
         />
       </div>
 

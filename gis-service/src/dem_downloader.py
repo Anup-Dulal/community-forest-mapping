@@ -1,267 +1,193 @@
 """
-DEM downloader module.
-Handles downloading DEM data from various sources (SRTM, OpenTopography, NASA).
+DEM Downloader using GDAL and public SRTM data from AWS
 """
-
 import os
 import logging
-from typing import Dict, Optional, Tuple
 import requests
-import rasterio
-from rasterio.io import MemoryFile
+import gzip
+import struct
+from osgeo import gdal, osr
 import numpy as np
-from pathlib import Path
+import tempfile
+import shutil
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+def get_srtm_tile_url(lat, lon):
+    """
+    Get the AWS S3 URL for an SRTM tile
+    SRTM tiles are named based on their southwest corner
+    """
+    # Determine hemisphere indicators
+    lat_hem = 'N' if lat >= 0 else 'S'
+    lon_hem = 'E' if lon >= 0 else 'W'
+    
+    # Format coordinates (SRTM uses southwest corner)
+    lat_str = f"{lat_hem}{abs(int(lat)):02d}"
+    lon_str = f"{lon_hem}{abs(int(lon)):03d}"
+    
+    # AWS Terrain Tiles URL pattern
+    url = f"https://elevation-tiles-prod.s3.amazonaws.com/skadi/{lat_str}/{lat_str}{lon_str}.hgt.gz"
+    
+    return url
 
-class DEMDownloader:
-    """Downloads DEM data from various sources."""
+def hgt_to_geotiff(hgt_path, tif_path, lat, lon):
+    """
+    Convert SRTM HGT file to GeoTIFF
+    
+    Args:
+        hgt_path: Path to .hgt file
+        tif_path: Output GeoTIFF path
+        lat: Latitude of southwest corner
+        lon: Longitude of southwest corner
+    """
+    # SRTM 1 arc-second data is 3601x3601 pixels
+    size = 3601
+    
+    # Read binary data
+    with open(hgt_path, 'rb') as f:
+        data = f.read()
+    
+    # Convert to numpy array (big-endian 16-bit signed integers)
+    elevations = np.frombuffer(data, dtype='>i2').reshape((size, size))
+    
+    # Create GeoTIFF
+    driver = gdal.GetDriverByName('GTiff')
+    ds = driver.Create(tif_path, size, size, 1, gdal.GDT_Int16)
+    
+    # Set geotransform (top-left corner, pixel size)
+    # SRTM data goes from north to south
+    pixel_size = 1.0 / (size - 1)
+    geotransform = (lon, pixel_size, 0, lat + 1, 0, -pixel_size)
+    ds.SetGeoTransform(geotransform)
+    
+    # Set projection (WGS84)
+    srs = osr.SpatialReference()
+    srs.ImportFromEPSG(4326)
+    ds.SetProjection(srs.ExportToWkt())
+    
+    # Write data
+    band = ds.GetRasterBand(1)
+    band.WriteArray(elevations)
+    band.SetNoDataValue(-32768)
+    
+    ds = None  # Close dataset
+    logger.info(f"Converted HGT to GeoTIFF: {tif_path}")
 
-    # SRTM tile size
-    SRTM_TILE_SIZE = 1  # 1 degree tiles
-
-    def __init__(self, cache_dir: str = './dem_cache'):
-        """
-        Initialize DEM downloader.
+def download_dem(bounds, output_path):
+    """
+    Download DEM data for the given bounds using AWS Terrain Tiles (SRTM)
+    
+    Args:
+        bounds: Dictionary with minLon, minLat, maxLon, maxLat
+        output_path: Path where the DEM file should be saved
         
-        Args:
-            cache_dir: Directory to cache downloaded DEM files
-        """
-        self.cache_dir = cache_dir
-        Path(cache_dir).mkdir(parents=True, exist_ok=True)
-
-    def download_dem(self, bbox: Dict, source: str = 'SRTM') -> str:
-        """
-        Download DEM data for given bounding box.
+    Returns:
+        str: Path to the downloaded DEM file
+    """
+    try:
+        logger.info(f"Starting DEM download for bounds: {bounds}")
+        logger.info(f"Output path: {output_path}")
         
-        Property 4: DEM Clipping Boundary Constraint (partial)
-        Ensures DEM covers the bounding box area.
+        min_lon = bounds['minLon']
+        min_lat = bounds['minLat']
+        max_lon = bounds['maxLon']
+        max_lat = bounds['maxLat']
         
-        Args:
-            bbox: Bounding box dictionary with minLon, maxLon, minLat, maxLat
-            source: DEM source ('SRTM', 'OpenTopography', 'NASA')
-            
-        Returns:
-            Path to downloaded DEM file
-            
-        Raises:
-            ValueError: If download fails
-        """
-        logger.info(f"Downloading DEM from {source} for bbox: {bbox}")
-
-        try:
-            if source == 'SRTM':
-                return self._download_srtm(bbox)
-            elif source == 'OpenTopography':
-                return self._download_opentopography(bbox)
-            elif source == 'NASA':
-                return self._download_nasa(bbox)
-            else:
-                raise ValueError(f"Unknown DEM source: {source}")
-        except Exception as e:
-            logger.error(f"Error downloading DEM: {str(e)}")
-            raise ValueError(f"Failed to download DEM: {str(e)}")
-
-    def _download_srtm(self, bbox: Dict) -> str:
-        """
-        Download SRTM 30m DEM data.
+        # Calculate SRTM tile coordinates (tiles are 1x1 degree)
+        start_lon = int(np.floor(min_lon))
+        end_lon = int(np.floor(max_lon))
+        start_lat = int(np.floor(min_lat))
+        end_lat = int(np.floor(max_lat))
         
-        Args:
-            bbox: Bounding box dictionary
-            
-        Returns:
-            Path to downloaded DEM file
-        """
-        logger.info("Downloading SRTM 30m DEM")
-
-        # Calculate tile indices
-        min_lon = int(np.floor(bbox['minLon']))
-        max_lon = int(np.ceil(bbox['maxLon']))
-        min_lat = int(np.floor(bbox['minLat']))
-        max_lat = int(np.ceil(bbox['maxLat']))
-
+        logger.info(f"SRTM tiles needed: lon {start_lon} to {end_lon}, lat {start_lat} to {end_lat}")
+        
         # Download tiles
-        tiles = []
-        for lon in range(min_lon, max_lon):
-            for lat in range(min_lat, max_lat):
-                tile_path = self._download_srtm_tile(lon, lat)
-                if tile_path:
-                    tiles.append(tile_path)
-
-        if not tiles:
-            raise ValueError("No SRTM tiles available for bbox")
-
+        tile_files = []
+        temp_dir = tempfile.mkdtemp()
+        
+        for lat in range(start_lat, end_lat + 1):
+            for lon in range(start_lon, end_lon + 1):
+                url = get_srtm_tile_url(lat, lon)
+                logger.info(f"Downloading tile from: {url}")
+                
+                try:
+                    response = requests.get(url, timeout=30)
+                    if response.status_code == 200:
+                        # Save compressed file
+                        gz_path = os.path.join(temp_dir, f"tile_{lat}_{lon}.hgt.gz")
+                        with open(gz_path, 'wb') as f:
+                            f.write(response.content)
+                        
+                        # Decompress the file
+                        hgt_path = os.path.join(temp_dir, f"tile_{lat}_{lon}.hgt")
+                        with gzip.open(gz_path, 'rb') as f_in:
+                            with open(hgt_path, 'wb') as f_out:
+                                shutil.copyfileobj(f_in, f_out)
+                        
+                        # Convert to GeoTIFF
+                        tif_path = os.path.join(temp_dir, f"tile_{lat}_{lon}.tif")
+                        hgt_to_geotiff(hgt_path, tif_path, lat, lon)
+                        
+                        tile_files.append(tif_path)
+                        logger.info(f"Downloaded and converted tile for lat={lat}, lon={lon}")
+                    else:
+                        logger.warning(f"Tile not available: {url} (status {response.status_code})")
+                except Exception as e:
+                    logger.warning(f"Failed to download tile for lat={lat}, lon={lon}: {str(e)}")
+        
+        if not tile_files:
+            raise Exception("No SRTM tiles could be downloaded for the specified area")
+        
+        logger.info(f"Downloaded {len(tile_files)} tiles")
+        
         # Merge tiles if multiple
-        if len(tiles) == 1:
-            return tiles[0]
+        if len(tile_files) == 1:
+            merged_vrt = tile_files[0]
         else:
-            return self._merge_rasters(tiles, bbox)
-
-    def _download_srtm_tile(self, lon: int, lat: int) -> Optional[str]:
-        """
-        Download a single SRTM tile.
+            # Create VRT to merge tiles
+            vrt_path = os.path.join(temp_dir, "merged.vrt")
+            vrt_options = gdal.BuildVRTOptions(resampleAlg='bilinear')
+            vrt_ds = gdal.BuildVRT(vrt_path, tile_files, options=vrt_options)
+            vrt_ds = None
+            merged_vrt = vrt_path
         
-        Args:
-            lon: Longitude of tile
-            lat: Latitude of tile
-            
-        Returns:
-            Path to downloaded tile or None if not available
-        """
-        try:
-            # SRTM tile naming convention: N/S + latitude, E/W + longitude
-            ns = 'N' if lat >= 0 else 'S'
-            ew = 'E' if lon >= 0 else 'W'
-            tile_name = f"{ns}{abs(lat):02d}{ew}{abs(lon):03d}"
-
-            # Check cache first
-            cache_path = os.path.join(self.cache_dir, f"{tile_name}.tif")
-            if os.path.exists(cache_path):
-                logger.debug(f"Using cached SRTM tile: {tile_name}")
-                return cache_path
-
-            # Download from USGS SRTM server
-            url = f"https://cloud.sdsc.edu/v1/AUTH_ogc/Raster/SRTM_GL30/SRTM_GL30_srtm/{tile_name}.tar.gz"
-
-            logger.info(f"Downloading SRTM tile: {tile_name}")
-            response = requests.get(url, timeout=30)
-
-            if response.status_code == 200:
-                # Extract and save
-                import tarfile
-                import io
-                tar = tarfile.open(fileobj=io.BytesIO(response.content))
-                # Extract the .tif file
-                for member in tar.getmembers():
-                    if member.name.endswith('.tif'):
-                        tar.extract(member, self.cache_dir)
-                        extracted_path = os.path.join(self.cache_dir, member.name)
-                        # Move to cache with standard name
-                        import shutil
-                        shutil.move(extracted_path, cache_path)
-                        logger.info(f"Cached SRTM tile: {tile_name}")
-                        return cache_path
-
-            logger.warning(f"SRTM tile not available: {tile_name}")
-            return None
-
-        except Exception as e:
-            logger.error(f"Error downloading SRTM tile {lon},{lat}: {str(e)}")
-            return None
-
-    def _download_opentopography(self, bbox: Dict) -> str:
-        """
-        Download DEM from OpenTopography API.
+        logger.info(f"Merging tiles and clipping to bounds...")
         
-        Args:
-            bbox: Bounding box dictionary
-            
-        Returns:
-            Path to downloaded DEM file
-        """
-        logger.info("Downloading DEM from OpenTopography")
-
-        api_key = os.getenv('OPENTOPOGRAPHY_API_KEY')
-        if not api_key:
-            raise ValueError("OpenTopography API key not configured")
-
-        # OpenTopography API endpoint
-        url = "https://cloud.sdsc.edu/v1/AUTH_opentopography/Raster/SRTM_GL30/SRTM_GL30_srtm/SRTM_GL30_srtm_srtm.tif"
-
-        params = {
-            'west': bbox['minLon'],
-            'south': bbox['minLat'],
-            'east': bbox['maxLon'],
-            'north': bbox['maxLat'],
-            'outputFormat': 'GeoTIFF'
-        }
-
-        try:
-            response = requests.get(url, params=params, headers={'Authorization': f'Bearer {api_key}'}, timeout=60)
-            response.raise_for_status()
-
-            # Save to cache
-            cache_path = os.path.join(self.cache_dir, f"dem_opentopography_{hash(str(bbox))}.tif")
-            with open(cache_path, 'wb') as f:
-                f.write(response.content)
-
-            logger.info(f"Downloaded DEM from OpenTopography: {cache_path}")
-            return cache_path
-
-        except Exception as e:
-            logger.error(f"Error downloading from OpenTopography: {str(e)}")
-            raise ValueError(f"Failed to download from OpenTopography: {str(e)}")
-
-    def _download_nasa(self, bbox: Dict) -> str:
-        """
-        Download DEM from NASA sources.
+        # Clip to exact bounds and save as GeoTIFF
+        warp_options = gdal.WarpOptions(
+            format='GTiff',
+            outputBounds=[min_lon, min_lat, max_lon, max_lat],
+            dstSRS='EPSG:4326',
+            resampleAlg='bilinear',
+            outputType=gdal.GDT_Float32,
+            creationOptions=['COMPRESS=LZW', 'TILED=YES']
+        )
         
-        Args:
-            bbox: Bounding box dictionary
-            
-        Returns:
-            Path to downloaded DEM file
-        """
-        logger.info("Downloading DEM from NASA")
-
-        api_key = os.getenv('NASA_API_KEY')
-        if not api_key:
-            raise ValueError("NASA API key not configured")
-
-        # NASA ASTER GDEM endpoint
-        url = "https://lpdaac.usgs.gov/products/astgtmv003/"
-
-        # For now, fall back to SRTM
-        logger.warning("NASA download not fully implemented, using SRTM fallback")
-        return self._download_srtm(bbox)
-
-    def _merge_rasters(self, raster_paths: list, bbox: Dict) -> str:
-        """
-        Merge multiple raster tiles into single raster.
+        result = gdal.Warp(output_path, merged_vrt, options=warp_options)
         
-        Args:
-            raster_paths: List of raster file paths
-            bbox: Bounding box for output
-            
-        Returns:
-            Path to merged raster
-        """
-        try:
-            import rasterio.merge
-            from rasterio.io import MemoryFile
-
-            logger.info(f"Merging {len(raster_paths)} raster tiles")
-
-            # Open all rasters
-            sources = [rasterio.open(path) for path in raster_paths]
-
-            # Merge
-            merged_data, merged_transform = rasterio.merge.merge(sources)
-
-            # Save merged raster
-            cache_path = os.path.join(self.cache_dir, f"dem_merged_{hash(str(bbox))}.tif")
-
-            with rasterio.open(
-                cache_path,
-                'w',
-                driver='GTiff',
-                height=merged_data.shape[1],
-                width=merged_data.shape[2],
-                count=merged_data.shape[0],
-                dtype=merged_data.dtype,
-                transform=merged_transform,
-                crs='EPSG:4326'
-            ) as dst:
-                dst.write(merged_data)
-
-            # Close sources
-            for src in sources:
-                src.close()
-
-            logger.info(f"Merged raster saved: {cache_path}")
-            return cache_path
-
-        except Exception as e:
-            logger.error(f"Error merging rasters: {str(e)}")
-            raise ValueError(f"Failed to merge rasters: {str(e)}")
+        if result is None:
+            raise Exception("GDAL Warp failed")
+        
+        result = None  # Close dataset
+        
+        logger.info(f"DEM downloaded and clipped successfully to {output_path}")
+        
+        # Verify the output
+        ds = gdal.Open(output_path)
+        if ds is None:
+            raise Exception("Output file is not a valid GeoTIFF")
+        
+        logger.info(f"DEM verification successful - Size: {ds.RasterXSize}x{ds.RasterYSize}")
+        ds = None
+        
+        # Cleanup temp files
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        
+        return output_path
+        
+    except Exception as e:
+        logger.error(f"Error downloading DEM: {str(e)}")
+        raise

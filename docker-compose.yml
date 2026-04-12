@@ -1,56 +1,54 @@
 version: '3.8'
 
 services:
+  # Spring Boot Backend
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./backend/Dockerfile
     container_name: cfm-backend
     environment:
-      SPRING_DATASOURCE_URL: jdbc:sqlite:/app/cfm.db
-      GIS_SERVICE_URL: http://gis-service:8001
+      SPRING_DATASOURCE_URL: jdbc:h2:file:./cfm-db;MODE=MySQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+      SPRING_DATASOURCE_USERNAME: sa
+      SPRING_DATASOURCE_PASSWORD: ""
+      GIS_SERVICE_URL: http://gis-service:8000
+      SERVER_PORT: 8080
     ports:
       - "8080:8080"
     volumes:
-      - ./uploads:/app/uploads
-      - ./dem_cache:/app/dem_cache
+      - ./cfm-db:/app/cfm-db
       - ./exports:/app/exports
-      - ./cfm.db:/app/cfm.db
-    networks:
-      - cfm-network
+      - ./uploads:/app/uploads
 
+  # Python GIS Microservice
   gis-service:
     build:
       context: ./gis-service
       dockerfile: Dockerfile
     container_name: cfm-gis-service
     environment:
-      OPENTOPOGRAPHY_API_KEY: ${OPENTOPOGRAPHY_API_KEY:-}
-      NASA_API_KEY: ${NASA_API_KEY:-}
+      FLASK_ENV: production
+      FLASK_APP: src.main:app
+      GEE_SERVICE_ACCOUNT_EMAIL: ${GEE_SERVICE_ACCOUNT_EMAIL:-}
+      GEE_SERVICE_ACCOUNT_KEY: ${GEE_SERVICE_ACCOUNT_KEY:-}
     ports:
-      - "8001:8001"
+      - "8001:8000"
     volumes:
-      - ./uploads:/app/uploads
       - ./dem_cache:/app/dem_cache
       - ./exports:/app/exports
-    networks:
-      - cfm-network
+      - ./uploads:/app/uploads
 
+  # React Frontend
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: cfm-frontend
-    environment:
-      REACT_APP_API_URL: http://localhost:8080
-      REACT_APP_GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
     ports:
       - "3000:3000"
     depends_on:
       - backend
-    networks:
-      - cfm-network
 
 networks:
-  cfm-network:
-    driver: bridge
+  default:
+    name: cfm-network

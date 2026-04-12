@@ -19,7 +19,7 @@ import java.util.UUID;
  */
 @Slf4j
 @RestController
-@RequestMapping("/sample-plots")
+@RequestMapping("/api/sample-plots")
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class SamplePlotController {
 
@@ -37,16 +37,17 @@ public class SamplePlotController {
      */
     @PostMapping("/generate")
     public ResponseEntity<?> generateSamplePlots(
-            @RequestParam UUID analysisResultId,
+            @RequestParam String analysisResultId,
             @RequestParam(required = false) Double samplingIntensity,
             @RequestParam(required = false) Integer minPlotsPerCompartment,
             @RequestParam(required = false) String distributionMethod
     ) {
         try {
-            log.info("Generating sample plots for analysis: {}", analysisResultId);
+            UUID id = UUID.fromString(analysisResultId);
+            log.info("Generating sample plots for analysis: {}", id);
 
             SamplePlotResponse response = samplePlotService.generateSamplePlots(
-                    analysisResultId,
+                    id,
                     samplingIntensity,
                     minPlotsPerCompartment,
                     distributionMethod
@@ -68,6 +69,52 @@ public class SamplePlotController {
     }
 
     /**
+     * Generate sample plots for hierarchical compartments (sub-compartments).
+     * Ensures minimum 5 plots per SUB-COMPARTMENT (not parent compartment).
+     *
+     * @param request Map containing analysisId, compartmentGeometryPath, samplingIntensity, etc.
+     * @return Response with generation status
+     */
+    @PostMapping("/generate-hierarchical")
+    public ResponseEntity<?> generateHierarchicalSamplePlots(
+            @RequestBody Map<String, Object> request
+    ) {
+        try {
+            String analysisId = (String) request.get("analysisId");
+            String compartmentGeometryPath = (String) request.get("compartmentGeometryPath");
+            Double samplingIntensity = request.containsKey("samplingIntensity") ? 
+                ((Number) request.get("samplingIntensity")).doubleValue() : 0.02;
+            Integer minPlotsPerCompartment = request.containsKey("minPlotsPerCompartment") ? 
+                ((Number) request.get("minPlotsPerCompartment")).intValue() : 5;
+            String distributionMethod = (String) request.getOrDefault("distributionMethod", "systematic");
+
+            log.info("Generating hierarchical sample plots for analysis: {}", analysisId);
+            log.info("Compartment geometry path: {}", compartmentGeometryPath);
+
+            SamplePlotResponse response = samplePlotService.generateHierarchicalSamplePlots(
+                    UUID.fromString(analysisId),
+                    compartmentGeometryPath,
+                    samplingIntensity,
+                    minPlotsPerCompartment,
+                    distributionMethod
+            );
+
+            return ResponseEntity.ok(response);
+
+        } catch (IllegalArgumentException e) {
+            log.error("Invalid argument: {}", e.getMessage());
+            return ResponseEntity.badRequest().body(
+                    Map.of("error", e.getMessage())
+            );
+        } catch (Exception e) {
+            log.error("Error generating hierarchical sample plots: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
+                    Map.of("error", "Failed to generate hierarchical sample plots: " + e.getMessage())
+            );
+        }
+    }
+
+    /**
      * Get all sample plots for an analysis result.
      *
      * @param analysisResultId ID of the analysis result
@@ -75,11 +122,17 @@ public class SamplePlotController {
      */
     @GetMapping("/analysis/{analysisResultId}")
     public ResponseEntity<?> getSamplePlotsByAnalysisResult(
-            @PathVariable UUID analysisResultId
+            @PathVariable String analysisResultId
     ) {
         try {
-            List<SamplePlot> samplePlots = samplePlotService.getSamplePlotsByAnalysisResult(analysisResultId);
+            UUID id = UUID.fromString(analysisResultId);
+            List<SamplePlot> samplePlots = samplePlotService.getSamplePlotsByAnalysisResult(id);
             return ResponseEntity.ok(samplePlots);
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid UUID format: {}", analysisResultId);
+            return ResponseEntity.badRequest().body(
+                    Map.of("error", "Invalid analysis ID format")
+            );
         } catch (Exception e) {
             log.error("Error retrieving sample plots: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
@@ -96,11 +149,17 @@ public class SamplePlotController {
      */
     @GetMapping("/compartment/{compartmentId}")
     public ResponseEntity<?> getSamplePlotsByCompartment(
-            @PathVariable UUID compartmentId
+            @PathVariable String compartmentId
     ) {
         try {
-            List<SamplePlot> samplePlots = samplePlotService.getSamplePlotsByCompartment(compartmentId);
+            UUID id = UUID.fromString(compartmentId);
+            List<SamplePlot> samplePlots = samplePlotService.getSamplePlotsByCompartment(id);
             return ResponseEntity.ok(samplePlots);
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid UUID format: {}", compartmentId);
+            return ResponseEntity.badRequest().body(
+                    Map.of("error", "Invalid compartment ID format")
+            );
         } catch (Exception e) {
             log.error("Error retrieving sample plots: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
@@ -117,12 +176,13 @@ public class SamplePlotController {
      */
     @PostMapping("/{samplePlotId}/convert-to-utm")
     public ResponseEntity<?> convertCoordinatesToUTM(
-            @PathVariable UUID samplePlotId
+            @PathVariable String samplePlotId
     ) {
         try {
-            log.info("Converting coordinates for sample plot: {}", samplePlotId);
+            UUID id = UUID.fromString(samplePlotId);
+            log.info("Converting coordinates for sample plot: {}", id);
 
-            Map<String, Object> result = samplePlotService.convertCoordinatesToUTM(samplePlotId);
+            Map<String, Object> result = samplePlotService.convertCoordinatesToUTM(id);
 
             return ResponseEntity.ok(result);
 

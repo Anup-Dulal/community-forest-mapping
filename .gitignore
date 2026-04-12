@@ -66,6 +66,9 @@ logs/
 *.swo
 *~
 
+# Kiro AI generated files
+.kiro/
+
 # OS files
 Thumbs.db
 .DS_Store

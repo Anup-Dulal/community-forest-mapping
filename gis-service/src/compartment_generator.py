@@ -265,11 +265,26 @@ class CompartmentGenerator:
             Dictionary with compartment statistics
         """
         try:
-            gdf = gpd.read_file(compartment_path)
-
-            areas = gdf.geometry.area.values
+            import json
+            
+            # Read GeoJSON directly to avoid fiona compatibility issues
+            with open(compartment_path, 'r') as f:
+                geojson_data = json.load(f)
+            
+            # Extract features and calculate areas
+            features = geojson_data.get('features', [])
+            areas = []
+            
+            for feature in features:
+                geom = shape(feature['geometry'])
+                areas.append(geom.area)
+            
+            if not areas:
+                raise ValueError("No compartments found in GeoJSON file")
+            
+            areas = np.array(areas)
             stats = {
-                'num_compartments': len(gdf),
+                'num_compartments': len(areas),
                 'total_area': float(np.sum(areas)),
                 'mean_area': float(np.mean(areas)),
                 'min_area': float(np.min(areas)),

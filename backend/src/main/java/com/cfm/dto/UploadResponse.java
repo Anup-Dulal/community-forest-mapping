@@ -1,5 +1,8 @@
 package com.cfm.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -16,6 +19,8 @@ import java.util.UUID;
 @AllArgsConstructor
 @Builder
 public class UploadResponse {
+    @JsonSerialize(using = ToStringSerializer.class)
+    @JsonProperty("shapefileId")
     private UUID shapefileId;
     private String filename;
     private String status;

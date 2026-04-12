@@ -23,7 +23,6 @@ import java.util.UUID;
 public class Shapefile {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
     @Column(name = "user_id")

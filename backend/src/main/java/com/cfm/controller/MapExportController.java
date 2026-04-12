@@ -21,7 +21,7 @@ import java.util.UUID;
  */
 @Slf4j
 @RestController
-@RequestMapping("/maps")
+@RequestMapping("/api/maps")
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class MapExportController {
 
@@ -37,13 +37,14 @@ public class MapExportController {
      */
     @PostMapping("/export/slope")
     public ResponseEntity<?> exportSlopeMap(
-            @RequestParam UUID analysisResultId,
+            @RequestParam String analysisResultId,
             @RequestParam(required = false, defaultValue = "png") String format
     ) {
         try {
-            log.info("Exporting slope map for analysis: {}", analysisResultId);
+            UUID id = UUID.fromString(analysisResultId);
+            log.info("Exporting slope map for analysis: {}", id);
 
-            Map<String, Object> result = mapExportService.renderSlopeMap(analysisResultId, format);
+            Map<String, Object> result = mapExportService.renderSlopeMap(id, format);
 
             String mapPath = (String) result.get("mapPath");
             File file = new File(mapPath);
@@ -84,13 +85,14 @@ public class MapExportController {
      */
     @PostMapping("/export/aspect")
     public ResponseEntity<?> exportAspectMap(
-            @RequestParam UUID analysisResultId,
+            @RequestParam String analysisResultId,
             @RequestParam(required = false, defaultValue = "png") String format
     ) {
         try {
-            log.info("Exporting aspect map for analysis: {}", analysisResultId);
+            UUID id = UUID.fromString(analysisResultId);
+            log.info("Exporting aspect map for analysis: {}", id);
 
-            Map<String, Object> result = mapExportService.renderAspectMap(analysisResultId, format);
+            Map<String, Object> result = mapExportService.renderAspectMap(id, format);
 
             String mapPath = (String) result.get("mapPath");
             File file = new File(mapPath);
@@ -131,13 +133,14 @@ public class MapExportController {
      */
     @PostMapping("/export/compartment")
     public ResponseEntity<?> exportCompartmentMap(
-            @RequestParam UUID analysisResultId,
+            @RequestParam String analysisResultId,
             @RequestParam(required = false, defaultValue = "png") String format
     ) {
         try {
-            log.info("Exporting compartment map for analysis: {}", analysisResultId);
+            UUID id = UUID.fromString(analysisResultId);
+            log.info("Exporting compartment map for analysis: {}", id);
 
-            Map<String, Object> result = mapExportService.renderCompartmentMap(analysisResultId, format);
+            Map<String, Object> result = mapExportService.renderCompartmentMap(id, format);
 
             String mapPath = (String) result.get("mapPath");
             File file = new File(mapPath);
@@ -178,13 +181,14 @@ public class MapExportController {
      */
     @PostMapping("/export/sample-plots")
     public ResponseEntity<?> exportSamplePlotMap(
-            @RequestParam UUID analysisResultId,
+            @RequestParam String analysisResultId,
             @RequestParam(required = false, defaultValue = "png") String format
     ) {
         try {
-            log.info("Exporting sample plot map for analysis: {}", analysisResultId);
+            UUID id = UUID.fromString(analysisResultId);
+            log.info("Exporting sample plot map for analysis: {}", id);
 
-            Map<String, Object> result = mapExportService.renderSamplePlotMap(analysisResultId, format);
+            Map<String, Object> result = mapExportService.renderSamplePlotMap(id, format);
 
             String mapPath = (String) result.get("mapPath");
             File file = new File(mapPath);

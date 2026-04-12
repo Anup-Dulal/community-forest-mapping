@@ -1,8 +1,10 @@
 package com.cfm.service;
 
 import com.cfm.dto.DEMStatusResponse;
+import com.cfm.model.AnalysisResult;
 import com.cfm.model.DEM;
 import com.cfm.model.Shapefile;
+import com.cfm.repository.AnalysisResultRepository;
 import com.cfm.repository.DEMRepository;
 import com.cfm.repository.ShapefileRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,6 +34,9 @@ class DEMDownloadServiceTest {
     private DEMRepository demRepository;
 
     @Mock
+    private AnalysisResultRepository analysisResultRepository;
+
+    @Mock
     private ShapefileRepository shapefileRepository;
 
     @Mock
@@ -40,7 +45,7 @@ class DEMDownloadServiceTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        service = new DEMDownloadService(demRepository, shapefileRepository, restTemplate);
+        service = new DEMDownloadService(demRepository, analysisResultRepository, shapefileRepository, restTemplate);
     }
 
     @Test

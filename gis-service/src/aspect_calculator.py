@@ -6,7 +6,7 @@ Calculates aspect from DEM and classifies into cardinal directions.
 import logging
 from typing import Dict
 import numpy as np
-import rasterio
+from osgeo import gdal
 import os
 from pathlib import Path
 
@@ -65,35 +65,31 @@ class AspectCalculator:
         logger.info(f"Calculating aspect from DEM: {dem_path}")
 
         try:
-            with rasterio.open(dem_path) as src:
-                dem_data = src.read(1).astype(np.float32)
-                dem_crs = src.crs
-                dem_transform = src.transform
+            # Open DEM with GDAL
+            dem_ds = gdal.Open(dem_path)
+            if dem_ds is None:
+                raise ValueError(f"Cannot open DEM file: {dem_path}")
+            
+            dem_band = dem_ds.GetRasterBand(1)
+            dem_data = dem_band.ReadAsArray().astype(np.float32)
+            
+            # Get geotransform and projection
+            geotransform = dem_ds.GetGeoTransform()
+            projection = dem_ds.GetProjection()
 
-                # Calculate aspect
-                aspect_degrees = self._calculate_aspect_degrees(dem_data)
+            # Calculate aspect
+            aspect_degrees = self._calculate_aspect_degrees(dem_data)
 
-                # Prepare output path
-                if output_path is None:
-                    output_path = os.path.join(self.export_dir, f"aspect_{hash(dem_path)}.tif")
+            # Prepare output path
+            if output_path is None:
+                output_path = os.path.join(self.export_dir, f"aspect_{hash(dem_path)}.tif")
 
-                # Save aspect raster
-                with rasterio.open(
-                    output_path,
-                    'w',
-                    driver='GTiff',
-                    height=aspect_degrees.shape[0],
-                    width=aspect_degrees.shape[1],
-                    count=1,
-                    dtype=aspect_degrees.dtype,
-                    crs=dem_crs,
-                    transform=dem_transform,
-                    nodata=-9999
-                ) as dst:
-                    dst.write(aspect_degrees, 1)
+            # Save aspect raster using GDAL
+            self._save_raster(output_path, aspect_degrees, geotransform, projection, -9999)
 
-                logger.info(f"Aspect raster saved: {output_path}")
-                return output_path
+            logger.info(f"Aspect raster saved: {output_path}")
+            dem_ds = None  # Close dataset
+            return output_path
 
         except Exception as e:
             logger.error(f"Error calculating aspect: {str(e)}")
@@ -120,35 +116,31 @@ class AspectCalculator:
         logger.info(f"Classifying aspect raster: {aspect_path}")
 
         try:
-            with rasterio.open(aspect_path) as src:
-                aspect_data = src.read(1)
-                aspect_crs = src.crs
-                aspect_transform = src.transform
+            # Open aspect raster with GDAL
+            aspect_ds = gdal.Open(aspect_path)
+            if aspect_ds is None:
+                raise ValueError(f"Cannot open aspect raster: {aspect_path}")
+            
+            aspect_band = aspect_ds.GetRasterBand(1)
+            aspect_data = aspect_band.ReadAsArray()
+            
+            # Get geotransform and projection
+            geotransform = aspect_ds.GetGeoTransform()
+            projection = aspect_ds.GetProjection()
 
-                # Classify aspect
-                classified = self._classify_aspect_data(aspect_data)
+            # Classify aspect
+            classified = self._classify_aspect_data(aspect_data)
 
-                # Prepare output path
-                if output_path is None:
-                    output_path = os.path.join(self.export_dir, f"aspect_classified_{hash(aspect_path)}.tif")
+            # Prepare output path
+            if output_path is None:
+                output_path = os.path.join(self.export_dir, f"aspect_classified_{hash(aspect_path)}.tif")
 
-                # Save classified raster
-                with rasterio.open(
-                    output_path,
-                    'w',
-                    driver='GTiff',
-                    height=classified.shape[0],
-                    width=classified.shape[1],
-                    count=1,
-                    dtype=classified.dtype,
-                    crs=aspect_crs,
-                    transform=aspect_transform,
-                    nodata=0
-                ) as dst:
-                    dst.write(classified, 1)
+            # Save classified raster using GDAL
+            self._save_raster(output_path, classified, geotransform, projection, 0)
 
-                logger.info(f"Classified aspect raster saved: {output_path}")
-                return output_path
+            logger.info(f"Classified aspect raster saved: {output_path}")
+            aspect_ds = None  # Close dataset
+            return output_path
 
         except Exception as e:
             logger.error(f"Error classifying aspect: {str(e)}")
@@ -225,21 +217,31 @@ class AspectCalculator:
             Dictionary with aspect statistics
         """
         try:
-            with rasterio.open(aspect_path) as src:
-                aspect_data = src.read(1)
+            # Open aspect raster with GDAL
+            aspect_ds = gdal.Open(aspect_path)
+            if aspect_ds is None:
+                raise ValueError(f"Cannot open aspect raster: {aspect_path}")
+            
+            aspect_band = aspect_ds.GetRasterBand(1)
+            aspect_data = aspect_band.ReadAsArray()
+            nodata = aspect_band.GetNoDataValue()
 
-                # Remove nodata values
-                valid_data = aspect_data[aspect_data != src.nodata]
+            # Remove nodata values
+            if nodata is not None:
+                valid_data = aspect_data[aspect_data != nodata]
+            else:
+                valid_data = aspect_data.flatten()
 
-                stats = {
-                    'min': float(np.min(valid_data)),
-                    'max': float(np.max(valid_data)),
-                    'mean': float(np.mean(valid_data)),
-                    'std': float(np.std(valid_data))
-                }
+            stats = {
+                'min': float(np.min(valid_data)),
+                'max': float(np.max(valid_data)),
+                'mean': float(np.mean(valid_data)),
+                'std': float(np.std(valid_data))
+            }
 
-                logger.info(f"Aspect statistics: {stats}")
-                return stats
+            logger.info(f"Aspect statistics: {stats}")
+            aspect_ds = None  # Close dataset
+            return stats
 
         except Exception as e:
             logger.error(f"Error calculating aspect statistics: {str(e)}")
@@ -259,3 +261,38 @@ class AspectCalculator:
             if direction_code == code:
                 return direction
         return "Unknown"
+
+    def _save_raster(self, output_path: str, data: np.ndarray, geotransform, projection, nodata):
+        """
+        Save raster data using GDAL.
+        
+        Args:
+            output_path: Output file path
+            data: Raster data array
+            geotransform: GDAL geotransform
+            projection: GDAL projection
+            nodata: NoData value
+        """
+        driver = gdal.GetDriverByName('GTiff')
+        height, width = data.shape
+        
+        # Determine data type
+        if data.dtype == np.uint8:
+            gdal_dtype = gdal.GDT_Byte
+        elif data.dtype == np.float32:
+            gdal_dtype = gdal.GDT_Float32
+        elif data.dtype == np.float64:
+            gdal_dtype = gdal.GDT_Float64
+        else:
+            gdal_dtype = gdal.GDT_Float32
+        
+        ds = driver.Create(output_path, width, height, 1, gdal_dtype)
+        ds.SetGeoTransform(geotransform)
+        ds.SetProjection(projection)
+        
+        band = ds.GetRasterBand(1)
+        band.WriteArray(data)
+        if nodata is not None:
+            band.SetNoDataValue(nodata)
+        
+        ds = None  # Close dataset

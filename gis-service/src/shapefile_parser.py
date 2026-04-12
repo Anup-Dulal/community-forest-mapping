@@ -1,6 +1,6 @@
 """
 Shapefile parser module.
-Handles reading and parsing shapefile components using Fiona and GeoPandas.
+Handles reading and parsing shapefile components using GeoPandas.
 """
 
 import os
@@ -8,7 +8,6 @@ import logging
 from pathlib import Path
 from typing import Dict, Tuple, Optional
 import geopandas as gpd
-import fiona
 from shapely.geometry import mapping, shape
 import json
 
@@ -53,6 +52,15 @@ class ShapefileParser:
             if gdf.empty:
                 raise ValueError("Shapefile contains no features")
             
+            # Get original projection
+            original_crs = str(gdf.crs) if gdf.crs else "EPSG:4326"
+            logger.info(f"Original CRS: {original_crs}")
+            
+            # Transform to WGS84 (EPSG:4326) for web display if not already
+            if gdf.crs and gdf.crs.to_string() != 'EPSG:4326':
+                logger.info(f"Transforming from {gdf.crs} to EPSG:4326")
+                gdf = gdf.to_crs('EPSG:4326')
+            
             # Get the first feature (boundary)
             boundary = gdf.iloc[0]
             geometry = boundary.geometry
@@ -64,7 +72,7 @@ class ShapefileParser:
             # Convert to GeoJSON
             geojson_geometry = mapping(geometry)
             
-            # Extract bounding box
+            # Extract bounding box (now in WGS84)
             bounds = geometry.bounds  # (minx, miny, maxx, maxy)
             bounding_box = {
                 'minLon': bounds[0],
@@ -80,13 +88,15 @@ class ShapefileParser:
                 'geometry': geojson_geometry,
                 'boundingBox': bounding_box,
                 'projection': projection,
+                'originalProjection': original_crs,
                 'featureCount': len(gdf),
                 'geometryType': geometry.geom_type,
                 'area': float(geometry.area),
                 'status': 'parsed'
             }
             
-            logger.info(f"Shapefile parsing successful. Projection: {projection}")
+            logger.info(f"Shapefile parsing successful. Original: {original_crs}, Transformed to: {projection}")
+            logger.info(f"Bounding box (WGS84): {bounding_box}")
             return result
             
         except Exception as e:
